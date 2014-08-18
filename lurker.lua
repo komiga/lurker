@@ -7,7 +7,7 @@
 -- under the terms of the MIT license. See LICENSE for details.
 --
 
-local lume = require "lume"
+local lume = require "dep/lume/lume"
 
 local lurker = { _version = "1.0.1" }
 
@@ -31,7 +31,6 @@ function lurker.init()
   lurker.protected = true
   lurker.quiet = false
   lurker.lastscan = 0
-  lurker.lasterrorfile = nil
   lurker.files = {}
   lurker.funcwrappers = {}
   lurker.lovefuncs = {}
@@ -88,8 +87,8 @@ end
 
 
 function lurker.onerror(e, nostacktrace)
-  lurker.print("An error occurred; switching to error state")
   lurker.state = "error"
+  lurker.print("error: {1}\n{2}", {e, lume.trim(debug.traceback("", 2), "\n")})
  
   -- Release mouse
   local setgrab = love.mouse.setGrab or love.mouse.setGrabbed
@@ -104,43 +103,8 @@ function lurker.onerror(e, nostacktrace)
 
   love.keypressed = function(k)
     if k == "escape" then
-      lurker.print("Exiting...")
       love.event.quit()
     end
-  end
-
-  local stacktrace = nostacktrace and "" or
-                     lume.trim((debug.traceback("", 2):gsub("\t", "")))
-  local msg = lume.format("{1}\n\n{2}", {e, stacktrace})
-  local colors = { 0xFF1E1E2C, 0xFFF0A3A3, 0xFF92B5B0, 0xFF66666A, 0xFFCDCDCD }
-  love.graphics.reset()
-  love.graphics.setFont(love.graphics.newFont(12))
-
-  love.draw = function()
-    local pad = 25
-    local width = love.graphics.getWidth()
-    local function drawhr(pos, color1, color2)
-      local animpos = lume.smooth(pad, width - pad - 8, lume.pingpong(time()))
-      if color1 then love.graphics.setColor(lume.rgba(color1)) end
-      love.graphics.rectangle("fill", pad, pos, width - pad*2, 1)
-      if color2 then love.graphics.setColor(lume.rgba(color2)) end
-      love.graphics.rectangle("fill", animpos, pos, 8, 1)
-    end
-    local function drawtext(str, x, y, color, limit)
-      love.graphics.setColor(lume.rgba(color))
-      love.graphics[limit and "printf" or "print"](str, x, y, limit)
-    end
-    love.graphics.setBackgroundColor(lume.rgba(colors[1]))
-    love.graphics.clear()
-    drawtext("An error has occurred", pad, pad, colors[2])
-    drawtext("lurker", width - love.graphics.getFont():getWidth("lurker") - 
-             pad, pad, colors[4])
-    drawhr(pad + 32, colors[4], colors[5])
-    drawtext("If you fix the problem and update the file the program will " ..
-             "resume", pad, pad + 46, colors[3])
-    drawhr(pad + 72, colors[4], colors[5])
-    drawtext(msg, pad, pad + 90, colors[5], width - pad * 2)
-    love.graphics.reset()
   end
 end
 
@@ -169,11 +133,6 @@ function lurker.update()
   if diff > lurker.interval then
     lurker.lastscan = lurker.lastscan + diff
     local changed = lurker.scan()
-    if #changed > 0 and lurker.lasterrorfile then
-      local f = lurker.lasterrorfile
-      lurker.lasterrorfile = nil
-      lurker.hotswapfile(f)
-    end
   end
 end
 
@@ -207,9 +166,7 @@ function lurker.hotswapfile(f)
   if ok then
     lurker.print("Swapped '{1}' in {2} secs", {f, t})
   else 
-    lurker.print("Failed to swap '{1}' : {2}", {f, err})
     if not lurker.quiet and lurker.protected then
-      lurker.lasterrorfile = f
       lurker.onerror(err, true)
       lurker.resetfile(f)
       return
